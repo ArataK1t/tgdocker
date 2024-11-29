@@ -227,21 +227,31 @@ def restart_container(container_name, query, context: CallbackContext):
 def show_container_info(container_name, query, context: CallbackContext):
     try:
         container = client.containers.get(container_name)
+        
+        # Собираем информацию о контейнере
         info = f"Информация о контейнере {container_name}:\n" \
                f"ID: {container.id}\n" \
                f"Статус: {container.status}\n" \
                f"Имя: {container.name}\n" \
                f"Время запуска: {container.attrs['State']['StartedAt']}\n" \
-               f"Используемый порт: {container.attrs['NetworkSettings']['Ports']}"
-        
-        context.bot.send_message(chat_id=query.message.chat_id, text=info)
+               f"Используемые порты: {container.attrs['NetworkSettings']['Ports']}\n"
 
-        # После показа информации возвращаемся к управлению
-        show_container_control_buttons(query, container_name, context)
+        # Кнопка "Назад" с возвратом в управление контейнером
+        keyboard = [
+            [InlineKeyboardButton("\u2b05 Назад", callback_data=f"back_to_container_{container_name}")]
+        ]
+
+        # Обновляем сообщение с информацией о контейнере и кнопкой "Назад"
+        query.edit_message_text(
+            f"{info}",  # Вставляем информацию о контейнере в текст
+            reply_markup=InlineKeyboardMarkup(keyboard)  # Добавляем только кнопку "Назад"
+        )
     except docker.errors.NotFound:
         message = f"Контейнер {container_name} не найден."
-        context.bot.send_message(chat_id=query.message.chat_id, text=message)
-
+        query.edit_message_text(
+            f"{message}",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\u2b05 Назад", callback_data="back_to_menu")]])
+        )
 
 # Выбор screen-сессии для логов
 def select_screen_session(update: Update, context: CallbackContext):
@@ -364,6 +374,10 @@ def button(update: Update, context: CallbackContext):
     elif query.data.startswith('info_'):
         container_name = query.data.split('_')[1]
         show_container_info(container_name, query, context)
+
+    elif query.data.startswith('back_to_container_'):
+        container_name = query.data.split('_')[2]
+        show_container_control_buttons(query, container_name, context)
 
     # Подтверждение действия (Да / Нет)
     elif query.data.startswith('confirm_'):
