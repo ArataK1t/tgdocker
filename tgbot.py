@@ -116,27 +116,34 @@ def show_container_status(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
 
-    containers = client.containers.list(all=True)
-    keyboard = []
+    try:
+        containers = client.containers.list(all=True)
+        keyboard = []
 
-    # Для каждого контейнера создаем кнопку
-    for container in containers:
-        # Определяем статус: Зеленый или Красный кружок
-        if container.status == "running":
-            status_icon = "🟢"
-        else:
-            status_icon = "🔴"
+        # Для каждого контейнера создаем кнопку
+        for container in containers:
+            # Определяем статус: Зеленый или Красный кружок
+            if container.status == "running":
+                status_icon = "🟢"
+            else:
+                status_icon = "🔴"
 
-        keyboard.append([InlineKeyboardButton(f"{status_icon} {container.name}", callback_data=f'container_{container.name}')])
+            keyboard.append([InlineKeyboardButton(f"{status_icon} {container.name}", callback_data=f'container_{container.name}')])
 
-    # Добавляем кнопку "Назад"
-    keyboard.append([InlineKeyboardButton("\u2b05 Назад", callback_data="back_to_menu")])
+        # Добавляем кнопку "Назад"
+        keyboard.append([InlineKeyboardButton("\u2b05 Назад", callback_data="back_to_menu")])
 
-    # Обновляем сообщение с кнопками
-    query.edit_message_text(
-        "Выберите контейнер для управления:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+        # Обновляем сообщение с кнопками
+        query.edit_message_text(
+            "Выберите контейнер для управления:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    except docker.errors.APIError:
+        query.edit_message_text(
+            "Не удалось получить список контейнеров.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\u2b05 Назад", callback_data="back_to_menu")]])
+        )
 
 def show_container_control_buttons(query, container_name, context):
     try:
@@ -148,7 +155,7 @@ def show_container_control_buttons(query, container_name, context):
             [InlineKeyboardButton("⏹ Остановить", callback_data=f"stop_{container_name}")],
             [InlineKeyboardButton("🔄 Перезапустить", callback_data=f"restart_{container_name}")],
             [InlineKeyboardButton("ℹ️ Информация", callback_data=f"info_{container_name}")],
-            [InlineKeyboardButton("\u2b05 Назад", callback_data="back_to_menu")]
+            [InlineKeyboardButton("\u2b05 Назад", callback_data="back_to_container_")]
         ]
 
         # Обновляем сообщение с кнопками для управления контейнером
@@ -288,17 +295,17 @@ def show_screen_logs(update: Update, context: CallbackContext):
         'chat_id': query.message.chat_id,
         'message_id': query.message.message_id,
         'callback': logs_callback,
-        'reply_markup': back_button()
+        'reply_markup': back_to_screen_sessions()
     }
    # Используем lambda для обновления сообщения с логами через определенный интервал
     job = context.job_queue.run_repeating(
-        lambda context: query.edit_message_text(logs_callback(), reply_markup=InlineKeyboardMarkup(back_button())), 
+        lambda context: query.edit_message_text(logs_callback(), reply_markup=InlineKeyboardMarkup(back_to_screen_sessions())), 
         interval=10, first=0
     )
     active_jobs[query.message.chat_id] = job
     
     # Начальное обновление сообщения с логами
-    query.edit_message_text(get_screen_logs(session_name), reply_markup=InlineKeyboardMarkup(back_button()))
+    query.edit_message_text(get_screen_logs(session_name), reply_markup=InlineKeyboardMarkup(back_to_screen_sessions()))
 
 # История уведомлений
 def show_notification_history(update: Update, context: CallbackContext):
@@ -336,6 +343,9 @@ def button(update: Update, context: CallbackContext):
 
     elif query.data.startswith('screen_logs_'):
         show_screen_logs(update, context)
+
+    elif query.data == 'back_to_screen_sessions':
+        select_screen_session(update, context)
 
     elif query.data == 'notification_history':
         show_notification_history(update, context)
@@ -377,7 +387,7 @@ def button(update: Update, context: CallbackContext):
 
     elif query.data.startswith('back_to_container_'):
         container_name = query.data.split('_')[2]
-        show_container_control_buttons(query, container_name, context)
+        show_container_status(update, context)
 
     # Подтверждение действия (Да / Нет)
     elif query.data.startswith('confirm_'):
