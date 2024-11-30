@@ -282,30 +282,56 @@ def select_screen_session(update: Update, context: CallbackContext):
 # Режим обновления логов screen-сессии
 def show_screen_logs(update: Update, context: CallbackContext):
     query = update.callback_query
-    session_name = query.data.split('_', 2)[2]
+    session_name = query.data.split('_', 2)[2]  # Получаем имя сессии
     query.answer()
 
-    # Остановка старой задачи
+    # Остановка старой задачи (если она была)
     stop_job_for_chat(query.message.chat_id)
 
+    # Функция для получения логов сессии
     def logs_callback():
-        return get_screen_logs(session_name)
+        return get_screen_logs(session_name)  # Получаем логи для текущей сессии
 
+    # Кнопка "Назад", которая возвращает к выбору screen-сессий
+    keyboard = [
+        [InlineKeyboardButton("\u2b05 Назад", callback_data="back_to_screen_sessions")]
+    ]
+
+    # Получаем текущее содержимое логов
+    current_logs = logs_callback()
+
+    # Получаем текущие данные из сообщения
+    current_text = query.message.text
+    current_markup = query.message.reply_markup
+
+    # Проверяем, изменился ли текст логов или разметка кнопок
+    if current_text != current_logs or current_markup != InlineKeyboardMarkup(keyboard):
+        # Если что-то изменилось, обновляем сообщение
+        query.edit_message_text(
+            current_logs,  # Обновляем текст с логами
+            reply_markup=InlineKeyboardMarkup(keyboard)  # Обновляем разметку с кнопкой "Назад"
+        )
+
+    # Создаем контекст для обновления сообщения через определенный интервал
     job_context = {
         'chat_id': query.message.chat_id,
         'message_id': query.message.message_id,
-        'callback': logs_callback,
-        'reply_markup': back_to_screen_sessions()
+        'callback': logs_callback,  # Функция для получения логов
+        'reply_markup': InlineKeyboardMarkup(keyboard)  # Кнопка "Назад"
     }
-   # Используем lambda для обновления сообщения с логами через определенный интервал
+
+    # Используем run_repeating для обновления сообщения с логами через 10 секунд
     job = context.job_queue.run_repeating(
-        lambda context: query.edit_message_text(logs_callback(), reply_markup=InlineKeyboardMarkup(back_to_screen_sessions())), 
-        interval=10, first=0
+        lambda context: query.edit_message_text(
+            logs_callback(),  # Получаем актуальные логи
+            reply_markup=InlineKeyboardMarkup(keyboard)  # И обновляем кнопки
+        ) if query.message.text != logs_callback() or query.message.reply_markup != InlineKeyboardMarkup(keyboard) else None,  # Проверка на необходимость обновления
+        interval=10,  # Интервал обновления сообщений (каждые 10 секунд)
+        first=0  # Сразу обновляем
     )
+
+    # Добавляем задачу в активные
     active_jobs[query.message.chat_id] = job
-    
-    # Начальное обновление сообщения с логами
-    query.edit_message_text(get_screen_logs(session_name), reply_markup=InlineKeyboardMarkup(back_to_screen_sessions()))
 
 # История уведомлений
 def show_notification_history(update: Update, context: CallbackContext):
