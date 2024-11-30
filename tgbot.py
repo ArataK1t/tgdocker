@@ -43,12 +43,17 @@ def get_screen_logs(session_name, lines=20):
         return f"Error: {e}"
 
 # Функция для добавления уведомления в историю
-def add_notification_to_history(message):
+def add_notification_to_history(message: str):
+    # Получаем текущую дату и время в UTC, а затем переводим в московское время (по UTC+3)
     now = datetime.now(timezone.utc).astimezone(tz=timezone(timedelta(hours=3)))
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Формируем строку с уведомлением и добавляем в историю
     notification_history.append(f"[{timestamp}] {message}")
+
+    # Ограничиваем количество уведомлений в истории до 50
     if len(notification_history) > 50:
-        notification_history.pop(0)
+        notification_history.pop(0)  # Удаляем первое (старое) уведомление, если их больше 50
 
 # Главное меню
 def start(update: Update, context: CallbackContext):
@@ -193,10 +198,7 @@ def start_container(container_name, query, context: CallbackContext):
     try:
         container = client.containers.get(container_name)
         container.start()
-        message = f"Контейнер {container_name} успешно запущен."
 
-        # Отправляем уведомление и обновляем интерфейс
-        context.bot.send_message(chat_id=query.message.chat_id, text=message)
         show_container_control_buttons(query, container_name, context)
 
     except docker.errors.NotFound:
@@ -207,10 +209,7 @@ def stop_container(container_name, query, context: CallbackContext):
     try:
         container = client.containers.get(container_name)
         container.stop()
-        message = f"Контейнер {container_name} успешно остановлен."
-
-        # Отправляем уведомление и обновляем интерфейс
-        context.bot.send_message(chat_id=query.message.chat_id, text=message)
+       
         show_container_control_buttons(query, container_name, context)
 
     except docker.errors.NotFound:
@@ -221,10 +220,7 @@ def restart_container(container_name, query, context: CallbackContext):
     try:
         container = client.containers.get(container_name)
         container.restart()
-        message = f"Контейнер {container_name} успешно перезапущен."
 
-        # Отправляем уведомление и обновляем интерфейс
-        context.bot.send_message(chat_id=query.message.chat_id, text=message)
         show_container_control_buttons(query, container_name, context)
 
     except docker.errors.NotFound:
@@ -429,28 +425,33 @@ def button(update: Update, context: CallbackContext):
 def check_container_health_and_notify(context: CallbackContext):
     global container_states, notification_messages
 
-    containers = client.containers.list(all=True)
+    containers = client.containers.list(all=True)  # Получаем все контейнеры (включая остановленные)
 
     for container in containers:
         container_name = container.name
         current_status = container.status
 
+        # Проверяем, изменился ли статус контейнера
         if container_name not in container_states or container_states[container_name] != current_status:
-            container_states[container_name] = current_status
+            container_states[container_name] = current_status  # Обновляем состояние контейнера
 
+            # Отправляем уведомление только если контейнер в статусе "stopped", "exited" или "unhealthy"
             if current_status in ['exited', 'stopped', 'unhealthy']:
                 message = f"\u2757 Контейнер {container_name} в состоянии {current_status}."
-                add_notification_to_history(message)
+                add_notification_to_history(message)  # Добавляем уведомление в историю
 
+                # Отправляем уведомление в Telegram
                 sent_message = context.bot.send_message(
                     chat_id=context.job.context['chat_id'],
                     text=message,
                     disable_notification=False
                 )
-                notification_messages.append(sent_message.message_id)
+                notification_messages.append(sent_message.message_id)  # Добавляем ID сообщения в список для дальнейшего удаления
 
-        elif current_status == 'running' and container_name in notified_containers:
-            notified_containers.remove(container_name)
+        # Не отправляем уведомления, если контейнер снова стал "running"
+        elif current_status == 'running':
+            # Если контейнер был остановлен или в другом статусе, и теперь снова запущен, не отправляем уведомление
+            continue
           
 # Функция для очистки истории уведомлений
 def clear_notification_history(update: Update, context: CallbackContext):
